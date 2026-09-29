@@ -10,9 +10,20 @@
 \usepackage{tabularx}
 \usepackage{enumitem}
 \usepackage{amsmath}
+\usepackage{mathpartir}
+\mprset{rightstyle=\normalfont\small}
+
+% judgements
+\newcommand{\eqj}[4]{\models #1 \sim #2 : #3 \Rightarrow #4}
+\newcommand{\hj}[3]{\models #1 : #2 \Rightarrow #3}
+\newcommand{\phj}[4]{\models #1 : #2 \Rightarrow #3\ [{=}\,#4]}
+\newcommand{\Eq}[1]{\mathord{=}\{#1\}}
+\newcommand{\cd}[1]{\mathtt{#1}}
+\newcommand{\mods}{\mathrm{mod}}
 \usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
 
 \setlist{nosep,leftmargin=*}
+\setlength{\parskip}{0.5em}
 
 % --------------------------------------------------------------------
 % EasyCrypt listings
@@ -91,6 +102,26 @@ for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
 \end{itemize}
 
 % ====================================================================
+\section{Reading the rules}\label{sec:reading}
+
+Each section below states, as inference rules, the program-logic rule behind the tactics it shows.
+The rules are simplified to the shape the tactic uses, and they are read bottom-up, because the tactic turns the goal below the line into the goals above it.
+
+\begin{itemize}
+  \item $\eqj{c_1}{c_2}{\Phi}{\Psi}$ is a pRHL judgement.
+    From any two memories related by $\Phi$, the output distributions of $c_1$ and $c_2$ are related by $\Psi$, which means there is a coupling of them whose support lies in $\Psi$.
+  \item $\Phi$ and $\Psi$ relate two memories.
+    For a formula $P$ over one memory, $P\{1\}$ reads it in the left memory and $P\{2\}$ in the right one, and $\Eq{x}$ abbreviates $x\{1\} = x\{2\}$.
+  \item $\hj{c}{P}{Q}$ is a Hoare judgement, saying that every terminating run of $c$ from a memory in $P$ ends in $Q$.
+    It says nothing about termination.
+  \item $\phj{c}{P}{Q}{p}$ is a probabilistic Hoare judgement, saying that from every memory in $P$ the probability that $c$ ends in $Q$ is exactly $p$.
+    With $p = 1$ it gives both termination and the postcondition.
+  \item $\mods(c)$ is the set of variables $c$ may write.
+    When a rule quantifies over values for them, \EC{} shows the quantified names as \ec|result_L|, \ec|O_R|, \ec|S_R| and so on.
+\end{itemize}
+
+
+% ====================================================================
 \section{\texorpdfstring{\texttt{conseq}}{conseq}}\label{sec:conseq}
 
 \begin{itemize}
@@ -104,6 +135,26 @@ for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
   \item \ec|conseq ll H| turns losslessness and a hoare triple into a phoare spec with probability~$1$, which is what \ec|call{1}| needs.
   \item \ec|conseq H1 H2| on a hoare goal conjoins the postconditions of two hoare triples.
 \end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{conseq}]
+  {\Phi \Rightarrow \Phi' \\ \eqj{c_1}{c_2}{\Phi'}{\Psi'} \\ \Psi' \Rightarrow \Psi}
+  {\eqj{c_1}{c_2}{\Phi}{\Psi}}
+
+\inferrule*[right=\texttt{conseq E H1 H2}]
+  {\eqj{c_1}{c_2}{\Phi'}{\Psi'} \\ \hj{c_1}{P_1}{Q_1} \\ \hj{c_2}{P_2}{Q_2} \\\\
+   \Phi \Rightarrow \Phi' \wedge P_1\{1\} \wedge P_2\{2\} \\
+   \Psi' \wedge Q_1\{1\} \wedge Q_2\{2\} \Rightarrow \Psi}
+  {\eqj{c_1}{c_2}{\Phi}{\Psi}}
+
+\inferrule*[right=\texttt{conseq ll H}]
+  {\phj{c}{\mathit{true}}{\mathit{true}}{1} \\ \hj{c}{P}{Q}}
+  {\phj{c}{P}{Q}{1}}
+\end{mathpar}
+
+\noindent
+The second rule is sound because a Hoare postcondition holds in every final memory of its side, and so in every pair of memories the coupling can reach.
+The last implication must hold in all such pairs, which is why \EC{} states it with the variables in $\mods(c_1)$ and $\mods(c_2)$ universally quantified.
 
 \lstinputlisting[title={\texttt{01\_conseq.ec}}]{01_conseq.ec}
 
@@ -124,6 +175,25 @@ for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
   \item \ec|call H| with a hoare lemma \ec|H| works as in hoare logic.
 \end{itemize}
 
+\begin{mathpar}
+\inferrule*[right=\texttt{call (: I)}]
+  {\forall \cd{o}.\ \eqj{\cd{O}_1.\cd{o}}{\cd{O}_2.\cd{o}}{\Eq{\mathit{arg}} \wedge I}{\Eq{\mathit{res}} \wedge I}}
+  {\eqj{\cd{A}(\cd{O}_1).\cd{f}}{\cd{A}(\cd{O}_2).\cd{f}}{\Eq{\mathit{arg}, \cd{glob\ A}} \wedge I}{\Eq{\mathit{res}, \cd{glob\ A}} \wedge I}}
+
+\inferrule*[right=\texttt{call\{1\} H}]
+  {\phj{\cd{f}}{P}{Q}{1} \\\\
+   \Phi \Rightarrow P[e/\mathit{arg}]\{1\} \wedge
+     \forall v\, \vec{w}.\ Q[v/\mathit{res}, \vec{w}/\mods(\cd{f})]\{1\} \Rightarrow \Psi[v/x, \vec{w}/\mods(\cd{f})]\{1\}}
+  {\eqj{x \leftarrow \cd{f}(e)}{\mathtt{skip}}{\Phi}{\Psi}}
+\end{mathpar}
+
+\noindent
+In the first rule $\cd{o}$ ranges over the oracle procedures $\cd{A}$ may call, $I$ must not mention $\cd{glob\ A}$, and $\cd{A}$ must not be able to write the variables of $I$.
+A procedure declared with \ec|{}| may call no oracle, so the rule has no premises and $I = \mathit{true}$ suffices, while facts about variables outside $\mods = \cd{glob\ A}$ survive the call unchanged.
+
+In the second rule the new values of everything $\cd{f}$ may modify are universally quantified, and $Q$ is all that is known about them.
+A spec that says nothing about some variable the rest of the proof needs leaves an unprovable goal, with a fresh name such as \ec|S_R| where the old value used to be.
+
 \lstinputlisting[title={\texttt{02\_call.ec}}]{02_call.ec}
 
 % ====================================================================
@@ -139,6 +209,20 @@ for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
   \item In a relational goal, say which side, as in \ec|exlim x{1}, M.y{2} => a b|.
   \item An \ec|exlim| at the top is fine when nothing before the call changes the value, because then the value at the start and the value at the call coincide.
 \end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{seq}]
+  {\eqj{c_1}{c_2}{\Phi}{\Theta} \\ \eqj{c_1'}{c_2'}{\Theta}{\Psi}}
+  {\eqj{c_1; c_1'}{c_2; c_2'}{\Phi}{\Psi}}
+
+\inferrule*[right=\texttt{exlim e => v}]
+  {\forall v.\ \eqj{c_1}{c_2}{\Phi \wedge e = v}{\Psi}}
+  {\eqj{c_1}{c_2}{\Phi}{\Psi}}
+\end{mathpar}
+
+\noindent
+In the second rule $v$ is fresh, and $e$ is evaluated in the memories $\Phi$ talks about, which are the initial memories of all of $c_1$ and $c_2$.
+To name a value in the middle of a program, apply \ec|seq| first and then \ec|exlim| in its second premise, where the middle of the program has become the start of $c_1'$ and $c_2'$.
 
 \lstinputlisting[title={\texttt{03\_exlim\_seq.ec}}]{03_exlim_seq.ec}
 
@@ -159,6 +243,32 @@ for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
     State the spec in \ec|byequiv|, discharge it with \ec|conseq|, and use \ec|symmetry| when the games sit on the other sides.
   \item \ec|smt| treats probability terms as opaque reals, so arithmetic over several of them works as long as the terms are syntactically identical.
 \end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{byequiv}]
+  {\eqj{c_1}{c_2}{\Phi}{\Psi} \\ \Phi(m_1, m_2) \\ \Psi \Rightarrow (E_1\{1\} \Rightarrow E_2\{2\})}
+  {\Pr[c_1, m_1 : E_1] \le \Pr[c_2, m_2 : E_2]}
+
+\inferrule*[right=\texttt{symmetry}]
+  {\eqj{c_2}{c_1}{\Phi^{-1}}{\Psi^{-1}}}
+  {\eqj{c_1}{c_2}{\Phi}{\Psi}}
+
+\inferrule*[right=\texttt{bypr} (phoare)]
+  {\forall m.\ P(m) \Rightarrow \Pr[c, m : Q] = p}
+  {\phj{c}{P}{Q}{p}}
+
+\inferrule*[right=\texttt{bypr} (hoare)]
+  {\forall m.\ P(m) \Rightarrow \Pr[c, m : \neg Q] = 0}
+  {\hj{c}{P}{Q}}
+
+\inferrule*[right=\texttt{byphoare; hoare}]
+  {\hj{c}{P}{\neg E} \\ P(m)}
+  {\Pr[c, m : E] = 0}
+\end{mathpar}
+
+\noindent
+With $\Leftrightarrow$ in place of $\Rightarrow$ in the last premise, \ec|byequiv| gives equality.
+$\Phi^{-1}$ is $\Phi$ with $\{1\}$ and $\{2\}$ exchanged.
 
 \lstinputlisting[title={\texttt{04\_pr.ec}}]{04_pr.ec}
 
@@ -199,6 +309,26 @@ The code before the call is left with the postcondition \ec|if B{2} then J else 
     Splitting $\Pr_2[E]$ on bad then yields equality.
 \end{itemize}
 
+\noindent
+Writing $\mathcal{I}(X)$ for $\mathbf{if}\ B\{2\}\ \mathbf{then}\ J\ \mathbf{else}\ (\Eq{X} \wedge I)$, the rule reads as follows.
+
+\begin{mathpar}
+\inferrule*[right=\texttt{call (: B, I, J)}]
+  {\text{$\cd{A}$ is lossless when its oracles are} \\\\
+   \forall \cd{o}.\ \eqj{\cd{O}_1.\cd{o}}{\cd{O}_2.\cd{o}}{\neg B\{2\} \wedge \Eq{\mathit{arg}} \wedge I}{\mathcal{I}(\mathit{res})} \\\\
+   \forall \cd{o}.\ \forall m_2.\ B(m_2) \Rightarrow \big(\phj{\cd{O}_1.\cd{o}}{J}{J}{1}\big) \\
+   \forall \cd{o}.\ \forall m_1.\ \phj{\cd{O}_2.\cd{o}}{B \wedge J}{B \wedge J}{1}}
+  {\eqj{\cd{A}(\cd{O}_1).\cd{f}}{\cd{A}(\cd{O}_2).\cd{f}}{\mathcal{I}(\mathit{arg}, \cd{glob\ A})}{\mathcal{I}(\mathit{res}, \cd{glob\ A})}}
+
+\inferrule*[right=up to bad]
+  {\eqj{c_1}{c_2}{\Phi}{\Eq{B} \wedge (\neg B\{2\} \Rightarrow \Eq{\mathit{res}})} \\ \Phi(m_1, m_2)}
+  {\Pr[c_1, m_1 : E] \le \Pr[c_2, m_2 : E] + \Pr[c_2, m_2 : B]}
+\end{mathpar}
+
+\noindent
+In the third and fourth premises $J$ is a relation, and the memory of the side that does not run is the fixed $m_2$ or $m_1$.
+The second rule is \ec|byequiv| followed by $\Pr[E \vee B] \le \Pr[E] + \Pr[B]$, where $E$ is an event on the result.
+
 \lstinputlisting[title={\texttt{05\_upto\_bad.ec}}]{05_upto_bad.ec}
 
 % ====================================================================
@@ -218,6 +348,23 @@ A rewinding reduction runs the adversary once more than the game it is compared 
 \noindent
 The state-reading procedures are declared with \ec|{}|, so they cannot call the oracle.
 They stand for the reduction taking a snapshot of the adversary, not for something the adversary does.
+
+\noindent
+Each dropped call is one application of \ec|call{1} H| from Section~\ref{sec:call}.
+For a discarded run between a save and a restore, the derivation is the following chain, read from the bottom.
+
+\begin{mathpar}
+\inferrule*[right=\texttt{call\{1\} (phs g)}]
+ {\inferrule*[right=\texttt{call\{1\} (phr k)}]
+   {\inferrule*[right=\texttt{call\{1\} (phl g)}]
+     {\Phi \wedge \cd{glob\ A}\{1\} = g \Rightarrow \Psi}
+     {\eqj{\cd{load}(s)}{\mathtt{skip}}{s\{1\} = f(g) \wedge \Phi}{\Psi}}}
+   {\eqj{\cd{run}(); \cd{load}(s)}{\mathtt{skip}}{s\{1\} = f(g) \wedge \Phi}{\Psi}}}
+ {\eqj{s \leftarrow \cd{save}(); \cd{run}(); \cd{load}(s)}{\mathtt{skip}}{\cd{glob\ A}\{1\} = g \wedge \Phi}{\Psi}}
+\end{mathpar}
+
+\noindent
+Here $\Phi$ mentions only state that $\cd{run}$ leaves alone, which is what the spec \ec|phr| provides, and $\cd{load}(f(g))$ restores $\cd{glob\ A}$ to $g$ whatever $\cd{run}$ did to it.
 
 \lstinputlisting[title={\texttt{06\_one\_sided.ec}}]{06_one_sided.ec}
 
