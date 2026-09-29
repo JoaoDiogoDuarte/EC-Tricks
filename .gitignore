@@ -1,0 +1,128 @@
+## ------------------------------------------------------------------
+## EasyCrypt
+## ------------------------------------------------------------------
+# compiled / cached theories
+*.eco
+# Why3 session and prover output
+why3session.xml
+why3shapes.gz
+*.why3
+.why3.conf
+
+## ------------------------------------------------------------------
+## LaTeX
+## ------------------------------------------------------------------
+# core auxiliary files
+*.aux
+*.lof
+*.log
+*.lot
+*.fls
+*.out
+*.toc
+*.fmt
+*.fot
+*.cb
+*.cb2
+.*.lb
+
+# intermediate documents
+*.dvi
+*.xdv
+*-converted-to.*
+
+# bibliography
+*.bbl
+*.bbl-SAVE-ERROR
+*.bcf
+*.bcf-SAVE-ERROR
+*.blg
+*-blx.aux
+*-blx.bib
+*.run.xml
+
+# build tools
+*.fdb_latexmk
+*.synctex
+*.synctex(busy)
+*.synctex.gz
+*.synctex.gz(busy)
+*.pdfsync
+*.rubbercache
+rubber.cache
+latex.out/
+
+# listings, hyperref, glossaries, indices
+*.lol
+*.brf
+*.nav
+*.snm
+*.vrb
+*.acn
+*.acr
+*.glg
+*.glo
+*.gls
+*.glsdefs
+*.idx
+*.ilg
+*.ind
+*.ist
+*.xdy
+*.maf
+*.mtc
+*.mtc[0-9]*
+*.nlg
+*.nlo
+*.nls
+*.soc
+*.loa
+*.thm
+*.tdo
+*.upa
+*.upb
+_minted*
+*.pyg
+*.pytxcode
+pythontex-files-*/
+*.auxlock
+*.figlist
+*.makefile
+figurelist.txt
+*.dep
+*.md5
+*.tikz.md5
+
+## ------------------------------------------------------------------
+## Emacs
+## ------------------------------------------------------------------
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+.org-id-locations
+*_archive
+*_flymake.*
+/eshell/history
+/eshell/lastdir
+/elpa/
+*.rel
+/auto/
+.cask/
+dist/
+flycheck_*.el
+/server/
+.projectile
+.dir-locals.el
+/network-security.data
+# Proof General
+*.pg-*
+
+## ------------------------------------------------------------------
+## OS
+## ------------------------------------------------------------------
+.DS_Store

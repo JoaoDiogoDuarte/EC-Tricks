@@ -1,0 +1,262 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+
+\setlist{nosep,leftmargin=*}
+
+% --------------------------------------------------------------------
+% EasyCrypt listings
+\lstdefinelanguage{easycrypt}{
+  morekeywords=[1]{forall,exists,fun,glob,let,in,var,proc,if,then,else,elif,while,return,res,equiv,hoare,phoare,islossless},
+  morekeywords=[2]{axiom,lemma,proof,qed,abort,end,import,export,include,local,declare,module,op,pred,require,theory,section,type,clone,with,Pr},
+  morekeywords=[3]{simplify,congr,split,left,right,case,pose,have,elim,exlim,ecall,apply,rewrite,subst,progress,trivial,auto,move,transitivity,symmetry,seq,wp,sp,sim,skip,call,rcondt,rcondf,swap,rnd,bypr,byphoare,byequiv,conseq,inline,exists,first,last,do},
+  morekeywords=[4]{exact,smt,by,done},
+  morekeywords=[5]{admit},
+  sensitive=true,
+  morecomment=[n]{(*}{*)},
+  morestring=[b]",
+}
+
+\lstset{
+  language=easycrypt,
+  upquote=true,
+  columns=fullflexible,
+  keepspaces=true,
+  basicstyle=\footnotesize\ttfamily,
+  keywordstyle=[1]{\bfseries\color{violet}},
+  keywordstyle=[2]{\bfseries\color{olive!80!black}},
+  keywordstyle=[3]{\bfseries\color{blue!70!black}},
+  keywordstyle=[4]{\bfseries\color{teal}},
+  keywordstyle=[5]{\bfseries\color{red}},
+  commentstyle=\itshape\color{gray!80!black},
+  frame=tb,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=6pt,
+  breaklines=true,
+  literate={->}{{$\rightarrow$}}2 {=>}{{$\Rightarrow$}}2 {==>}{{$\Longrightarrow$}}3
+           {/\\}{{$\wedge$}}2 {\\/}{{$\vee$}}2 {<=}{{$\le$}}2 {<>}{{$\neq$}}2,
+}
+
+\newcommand{\ec}{\lstinline[basicstyle=\small\ttfamily]}
+\newcommand{\EC}{\textsc{EasyCrypt}}
+
+\title{\EC{} tricks}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\noindent
+Every listing below is a complete file from this folder.
+Each compiles on its own against the standard library, so any of them can be copied out, run, and changed.
+
+\begin{lstlisting}[language={},numbers=none]
+for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
+\end{lstlisting}
+
+\tableofcontents
+
+% ====================================================================
+\section{Rules of thumb}
+
+\begin{itemize}
+  \item \textbf{\ec|exlim| binds the value at the start of the remaining program.}
+    That is the value in the current precondition.
+    If the program changes it before the point where you need it, cut the program first with \ec|seq| or \ec|sp|.
+    \ec|exlim e => v| is the same as \ec|exists* e; elim* => v|.
+  \item \textbf{Calls are processed from the end.}
+    When dropping one-sided calls, handle the last one first.
+  \item \textbf{An equiv cannot relate a side to its own past.}
+    Fix the old value with \ec|exlim| and add a hoare triple for that side with \ec|conseq E H1 H2|.
+  \item \textbf{\ec|byequiv lemma| needs an exact match.}
+    Write the spec you want in \ec|byequiv (: P ==> Q)| and then \ec|conseq lemma|.
+    If the games are on the other sides, use \ec|symmetry| first.
+  \item \textbf{An up-to-bad invariant must include the equality of the flag}, or nothing says the left flag is still down while the right one is.
+  \item \textbf{A fact stated as $\Pr[\dots] = 1$ becomes a spec with \ec|bypr|.}
+    For a phoare spec, \ec|bypr => &m <-; exact (h &m)| is enough.
+    For a hoare spec, go through \ec|Pr[mu_not]| as in Section~\ref{sec:pr}.
+\end{itemize}
+
+% ====================================================================
+\section{\texorpdfstring{\texttt{conseq}}{conseq}}\label{sec:conseq}
+
+\begin{itemize}
+  \item \ec|conseq H| applies a spec lemma and leaves two side goals, the precondition implication and the postcondition implication.
+  \item \ec|conseq (: _ ==> Q)| changes the postcondition to \ec|Q| and keeps the precondition.
+    Use it to strengthen the postcondition to the equalities that \ec|sim| proves.
+  \item \ec|conseq E H1 H2| conjoins a hoare triple for each side onto a two-sided equiv.
+    An equiv relates the two sides to each other, never a side to its own initial value, so facts like ``the left counter went up by one'' have to come from a one-sided hoare triple.
+  \item \ec|(_: true ==> true)| in place of \ec|H1| or \ec|H2| means that nothing is added on that side.
+    It becomes a trivial goal.
+  \item \ec|conseq ll H| turns losslessness and a hoare triple into a phoare spec with probability~$1$, which is what \ec|call{1}| needs.
+  \item \ec|conseq H1 H2| on a hoare goal conjoins the postconditions of two hoare triples.
+\end{itemize}
+
+\lstinputlisting[title={\texttt{01\_conseq.ec}}]{01_conseq.ec}
+
+% ====================================================================
+\section{\texorpdfstring{\texttt{call}}{call}}\label{sec:call}
+
+\begin{itemize}
+  \item \ec|call (: I)| handles a call to an abstract adversary with an invariant \ec|I|.
+    It leaves one goal per oracle procedure, of the form \ec|={arg} /\ I ==> ={res} /\ I|.
+    Directly on the procedure, the same thing is \ec|proc I|.
+  \item A procedure declared with \ec|{}| in its module type may not call any oracle.
+    \ec|call (: true)| is then enough, since it only touches the adversary's own state and every other fact in the precondition carries over.
+  \item For an abstract oracle procedure, or an alias like \ec|proc get = O.get|, use \ec|proc*; call (: true)|.
+  \item \ec|call (: I)| is only for abstract procedures.
+    A concrete procedure needs a full spec, \ec|call (: P ==> Q)|.
+  \item \ec|call{1} H| with \ec|H| a phoare spec with probability~$1$ runs the call on the left side only.
+    Its postcondition is all you learn about what the call did.
+  \item \ec|call H| with a hoare lemma \ec|H| works as in hoare logic.
+\end{itemize}
+
+\lstinputlisting[title={\texttt{02\_call.ec}}]{02_call.ec}
+
+% ====================================================================
+\section{\texorpdfstring{\texttt{exlim}}{exlim} and \texorpdfstring{\texttt{seq}}{seq}}\label{sec:exlim}
+
+\begin{itemize}
+  \item \ec|exlim e => v| binds \ec|v| to the value of \ec|e| in the precondition of the current goal.
+    That precondition describes the state at the start of the program that is left, not at the point where you want to use \ec|v|.
+  \item The typical mistake is an \ec|exlim| at the top of a proof whose program changes the value before the call that needs it.
+    The call's precondition then asks for an equality that no longer holds.
+  \item The fix is to cut the program first, so that the call becomes the start of what is left.
+    \ec|seq| cuts at any point, and \ec|sp| consumes leading assignments.
+  \item In a relational goal, say which side, as in \ec|exlim x{1}, M.y{2} => a b|.
+  \item An \ec|exlim| at the top is fine when nothing before the call changes the value, because then the value at the start and the value at the call coincide.
+\end{itemize}
+
+\lstinputlisting[title={\texttt{03\_exlim\_seq.ec}}]{03_exlim_seq.ec}
+
+% ====================================================================
+\section{Probabilities}\label{sec:pr}
+
+\begin{itemize}
+  \item \ec|rewrite Pr[lemma]| applies a distribution lemma to a probability term.
+    The useful ones are \ec|mu_le1|, \ec|mu_sub|, \ec|mu_not|, \ec|mu_or| and \ec|mu_split E|.
+  \item $\Pr[E] = 0$ follows from a hoare triple on $\neg E$, by \ec|byphoare|, then \ec|hoare|.
+  \item A phoare spec with probability~$1$ follows from a fact of the form $\Pr[\dots] = 1$ that holds at every memory, by \ec|bypr|.
+  \item A hoare spec follows from the same fact.
+    \ec|bypr| turns the goal into $\Pr[\neg Q] = 0$, and $\Pr[\neg Q] = \Pr[\mathit{true}] - \Pr[Q]$ with $1 = \Pr[Q] \le \Pr[\mathit{true}] \le 1$.
+    No losslessness is needed.
+  \item Inside an event written in a proof, \ec|X{m}| for the memory bound by \ec|bypr| is read as the current \ec|X|.
+    Rather than retyping the event, rewrite with the hypothesis that already contains it, as in \ec|rewrite -h1 Pr[mu_sub]|.
+  \item \ec|byequiv lemma| needs the lemma's pre- and postcondition to match exactly.
+    State the spec in \ec|byequiv|, discharge it with \ec|conseq|, and use \ec|symmetry| when the games sit on the other sides.
+  \item \ec|smt| treats probability terms as opaque reals, so arithmetic over several of them works as long as the terms are syntactically identical.
+\end{itemize}
+
+\lstinputlisting[title={\texttt{04\_pr.ec}}]{04_pr.ec}
+
+% ====================================================================
+\section{Up to bad}\label{sec:upto}
+
+The call rule takes three components, \ec|call (: B, I, J)|.
+
+\begin{center}
+\begin{tabular}{@{}lp{.78\textwidth}@{}}
+  \toprule
+  \ec|B| & the bad event, read on the right memory and written without \ec|{2}| \\
+  \ec|I| & the relational invariant while $\neg$\ec|B|, which must include the equality of the flag \\
+  \ec|J| & what still holds once \ec|B| is set, preserved by each side alone (optional) \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+It generates a goal saying that the adversary terminates when its oracles do, and then three goals for every oracle procedure \ec|o|.
+
+\begin{enumerate}
+  \item \ec|equiv [o ~ o : !B{2} /\ ={arg} /\ I ==> if B{2} then J else ={res} /\ I]|.
+  \item \ec|forall &2, B{2} => phoare [o{1} : J ==> J] = 1%r|, for the left side after bad.
+  \item \ec|forall &1, phoare [o{2} : B /\ J ==> B /\ J] = 1%r|, which says the right side keeps bad.
+\end{enumerate}
+
+\noindent
+The code before the call is left with the postcondition \ec|if B{2} then J else (={res, glob A} /\ I)|.
+
+\begin{itemize}
+  \item Choose \ec|J| so that it implies bad stays set.
+    If some oracle could unset bad, for instance by overwriting the record that bad is computed from, put into \ec|J| whatever switches that oracle off.
+  \item If you only need \ec|!B{2} => ={res}| and not the equality of the flags afterwards, drop \ec|J|.
+    The goals after bad then only ask for termination.
+  \item From the equivalence, one \ec|byequiv| gives $\Pr_1[E] \le \Pr_2[E \vee \mathit{bad}] \le \Pr_2[E] + \Pr_2[\mathit{bad}]$.
+  \item If $\Pr_2[\mathit{bad}] = 0$, which a hoare triple can show, a second \ec|byequiv| in the other direction gives $\Pr_2[E \wedge \neg\mathit{bad}] \le \Pr_1[E]$.
+    Splitting $\Pr_2[E]$ on bad then yields equality.
+\end{itemize}
+
+\lstinputlisting[title={\texttt{05\_upto\_bad.ec}}]{05_upto_bad.ec}
+
+% ====================================================================
+\section{Dropping one-sided calls}\label{sec:onesided}
+
+A rewinding reduction runs the adversary once more than the game it is compared with, and that extra run is dropped on one side only.
+
+\begin{enumerate}
+  \item For every call you drop, get a phoare spec with probability~$1$ that says what it does to the state you still care about.
+    It comes from losslessness and a hoare fact through \ec|conseq ll H|, or from an axiom of the form $\Pr[\dots] = 1$ through \ec|bypr|.
+    If the axiom is existential, as a rewinding axiom usually is, these specs must be \ec|have|s inside the proof, after \ec|elim|.
+  \item Fix, with \ec|exlim|, the values those specs need, at a point where they are right.
+  \item Run \ec|call{1}| with each spec, from the last dropped call backwards.
+  \item Close with \ec|auto| and \ec|smt|.
+\end{enumerate}
+
+\noindent
+The state-reading procedures are declared with \ec|{}|, so they cannot call the oracle.
+They stand for the reduction taking a snapshot of the adversary, not for something the adversary does.
+
+\lstinputlisting[title={\texttt{06\_one\_sided.ec}}]{06_one_sided.ec}
+
+% ====================================================================
+\section{Pitfalls}\label{sec:pitfalls}
+
+\begin{itemize}
+  \item \ec|forall| extends as far to the right as it can.
+    In an invariant write \ec|/\ (forall y, P y) /\ Q| with the parentheses, or \ec|Q| ends up under the binder.
+  \item \ec|split| and other tactic names cannot be used as lemma or hypothesis names.
+  \item Program expressions cannot mention \ec|glob M|.
+    \EC{} reports that expressions cannot contain a glob statement.
+  \item Inside a section, a \ec|declare axiom| cannot use a \ec|local| predicate, and a non-local operator cannot mention the \ec|glob| of a declared module.
+    Spell the predicate out in the axiom.
+  \item \ec|=> //| may close more goals than expected, and the next bullet then fails because all goals are closed.
+  \item \ec|ecall{1} (lemma e{1})| crashed with \ec|InvalidGoalShape| in the version used here.
+    \ec|seq|, \ec|exlim| and \ec|call{1}| do the same job.
+  \item The order of the side goals from \ec|conseq| is not always the order of its arguments.
+    Look at them before writing bullets.
+\end{itemize}
+
+% ====================================================================
+\section{Seeing the goals from the command line}\label{sec:llm}
+
+\ec|easycrypt llm| loads a file up to a line and prints the goals there.
+
+\begin{lstlisting}[language={},numbers=none]
+easycrypt llm -I <dirs> -eval 'LOAD "file.ec" 42
+QUIET ON
+proc.
+GOALS ALL'
+\end{lstlisting}
+
+\begin{itemize}
+  \item \texttt{LOAD} checks everything up to and including the given line, then waits for more input.
+    If that line is \ec|proof. admit. qed.|, split it first, or the load runs past the proof.
+  \item Every further line is one tactic, one sentence per line.
+  \item \texttt{GOALS} prints the focused goal, \texttt{GOALS ALL} prints all of them, and \texttt{TREE ALL} prints the goal tree.
+    An error prints \texttt{ERROR} together with the offending \texttt{source:} line.
+\end{itemize}
+
+\end{document}
