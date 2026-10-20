@@ -94,3 +94,32 @@ qed.
  *    the Pr terms as opaque reals.  Keep the terms syntactically identical. *)
 lemma eq_from_two &m : Pr[U.f() @ &m : res] = Pr[U.g() @ &m : !res].
 proof. by have := fg_pr &m; have := gf_pr &m; smt(). qed.
+
+(* ------------------------------------------------------------------------ *)
+(* 7. Pr[E1] <= Pr[E2] when every terminating run that ends in E1 ends in E2
+ *    (a hoare fact).  byequiv with the program against itself; the hoare
+ *    triple is glued on with conseq E H1 H2 (01_conseq.ec, 3.). *)
+module W = {
+  var a, b : bool
+  proc run() : unit = { a <$ {0,1}; b <- b \/ a; }
+}.
+
+lemma W_ab : hoare [W.run : true ==> W.a => W.b].
+proof. by proc; auto => /#. qed.
+
+lemma W_le &m : Pr[W.run() @ &m : W.a] <= Pr[W.run() @ &m : W.b].
+proof.
+  byequiv (: ={W.a, W.b} ==> ={W.a, W.b} /\ (W.a{2} => W.b{2})) => //.
+  by conseq (: ={W.a, W.b} ==> ={W.a, W.b}) (: true ==> true) W_ab => //; sim.
+qed.
+(* The same without byequiv: byphoare + hoare gives Pr[E1 /\ !E2] = 0 (2.),
+ * then rewrite Pr[mu_split E2] and Pr[mu_sub]. *)
+
+(* ------------------------------------------------------------------------ *)
+(* 8. Pr[!E] = 1 - Pr[E] needs Pr[true] = 1, i.e. termination: byphoare
+ *    with a lossless program.  Without it, prefer stating upper bounds. *)
+lemma flip_not &m : Pr[T.flip() @ &m : !res] = 1%r - Pr[T.flip() @ &m : res].
+proof.
+  rewrite Pr[mu_not]; congr.
+  by byphoare => //; proc; auto; rewrite dbool_ll.
+qed.

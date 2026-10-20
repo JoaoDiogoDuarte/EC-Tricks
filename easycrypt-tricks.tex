@@ -9,7 +9,7 @@
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{enumitem}
-\usepackage{amsmath}
+\usepackage{amsmath,amssymb}
 \usepackage{mathpartir}
 \mprset{rightstyle=\normalfont\small}
 
@@ -17,6 +17,9 @@
 \newcommand{\eqj}[4]{\models #1 \sim #2 : #3 \Rightarrow #4}
 \newcommand{\hj}[3]{\models #1 : #2 \Rightarrow #3}
 \newcommand{\phj}[4]{\models #1 : #2 \Rightarrow #3\ [{=}\,#4]}
+\newcommand{\phjle}[4]{\models #1 : #2 \Rightarrow #3\ [{\le}\,#4]}
+\newcommand{\ehj}[3]{\models_{\mathbb{E}} #1 : #2 \Rightarrow #3}
+\newcommand{\smp}{\stackrel{\$}{\leftarrow}}
 \newcommand{\Eq}[1]{\mathord{=}\{#1\}}
 \newcommand{\cd}[1]{\mathtt{#1}}
 \newcommand{\mods}{\mathrm{mod}}
@@ -28,9 +31,9 @@
 % --------------------------------------------------------------------
 % EasyCrypt listings
 \lstdefinelanguage{easycrypt}{
-  morekeywords=[1]{forall,exists,fun,glob,let,in,var,proc,if,then,else,elif,while,return,res,equiv,hoare,phoare,islossless},
+  morekeywords=[1]{forall,exists,fun,glob,let,in,var,proc,if,then,else,elif,while,return,res,equiv,hoare,phoare,ehoare,islossless},
   morekeywords=[2]{axiom,lemma,proof,qed,abort,end,import,export,include,local,declare,module,op,pred,require,theory,section,type,clone,with,Pr},
-  morekeywords=[3]{simplify,congr,split,left,right,case,pose,have,elim,exlim,ecall,apply,rewrite,subst,progress,trivial,auto,move,transitivity,symmetry,seq,wp,sp,sim,skip,call,rcondt,rcondf,swap,rnd,bypr,byphoare,byequiv,conseq,inline,exists,first,last,do},
+  morekeywords=[3]{simplify,congr,split,left,right,case,pose,have,elim,exlim,ecall,apply,rewrite,subst,progress,trivial,auto,move,transitivity,symmetry,seq,wp,sp,sim,skip,call,rcondt,rcondf,swap,rnd,bypr,byphoare,byequiv,byehoare,conseq,inline,exists,first,last,do,fel,field},
   morekeywords=[4]{exact,smt,by,done},
   morekeywords=[5]{admit},
   sensitive=true,
@@ -78,6 +81,10 @@ Each compiles on its own against the standard library, so any of them can be cop
 for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
 \end{lstlisting}
 
+\noindent
+Every file was checked with \EC{} r2026.07-78 and with the main branch of October 2026 (r2026.10-1), each time with all provers and with Z3 alone (\ec|easycrypt compile -p Z3|).
+The pitfalls in Section~\ref{sec:pitfalls} were observed with r2026.07-78.
+
 \tableofcontents
 
 % ====================================================================
@@ -99,6 +106,21 @@ for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
   \item \textbf{A fact stated as $\Pr[\dots] = 1$ becomes a spec with \ec|bypr|.}
     For a phoare spec, \ec|bypr => &m <-; exact (h &m)| is enough.
     For a hoare spec, go through \ec|Pr[mu_not]| as in Section~\ref{sec:pr}.
+  \item \textbf{A probability is a spec.}
+    \ec|bypr|, \ec|byequiv| and \ec|proc true| turn \ec|Pr[G.main(x0) @ &m : res]| into a phoare that a \ec|call| can use.
+    That is how a bound for every value becomes a bound for a random one, and how a theorem about a random key, world or oracle gives one fixed value (Section~\ref{sec:avg}).
+  \item \textbf{A sample the run never reads is drawn after the run.}
+    Swap it behind the call; the chance that it lands in what the run outputs is then the mass of that set (Section~\ref{sec:late}).
+    First show that the run really does not read it.
+  \item \textbf{Symmetry is a coupling of the game with itself.}
+    Swap the samplings on one side so that the two hidden values cross (Section~\ref{sec:rnd}).
+  \item \textbf{Same law but no bijection: \ec|bypr (res{1}) (res{2})|}, then one \ec|byphoare| per side (Section~\ref{sec:laws}).
+  \item \textbf{Reason about a loop once.}
+    Prove its functional spec, a hoare triple and losslessness, and use it on each side of an equiv alone.
+    The two programs need not run in step (Section~\ref{sec:while}).
+  \item \textbf{A constant charge per call is \ec|fel|; a charge that depends on the state is an ehoare potential}, an invariant of every oracle call (Sections~\ref{sec:fel} and~\ref{sec:ehoare}).
+  \item \textbf{ehoare cannot use a hoare spec.}
+    Prove the ehoare for a reference program that computes the function, the equiv to it, and apply \ec|conseq E H| (Section~\ref{sec:ehoare}).
 \end{itemize}
 
 % ====================================================================
@@ -242,6 +264,10 @@ To name a value in the middle of a program, apply \ec|seq| first and then \ec|ex
   \item \ec|byequiv lemma| needs the lemma's pre- and postcondition to match exactly.
     State the spec in \ec|byequiv|, discharge it with \ec|conseq|, and use \ec|symmetry| when the games sit on the other sides.
   \item \ec|smt| treats probability terms as opaque reals, so arithmetic over several of them works as long as the terms are syntactically identical.
+  \item $\Pr[E_1] \le \Pr[E_2]$ holds when every terminating run that ends in $E_1$ ends in $E_2$.
+    Prove the hoare triple for $E_1 \Rightarrow E_2$, then \ec|byequiv| with the program against itself, the triple glued on with \ec|conseq E H1 H2|.
+  \item $\Pr[\neg E] = 1 - \Pr[E]$ needs $\Pr[\mathit{true}] = 1$, which is termination.
+    Where the program may not terminate, state upper bounds instead.
 \end{itemize}
 
 \begin{mathpar}
@@ -369,6 +395,241 @@ Here $\Phi$ mentions only state that $\cd{run}$ leaves alone, which is what the 
 \lstinputlisting[title={\texttt{06\_one\_sided.ec}}]{06_one_sided.ec}
 
 % ====================================================================
+\section{\texorpdfstring{\texttt{rnd}}{rnd}: coupling samplings}\label{sec:rnd}
+
+\begin{itemize}
+  \item \ec|rnd| couples the last sampling of each side.
+    Without arguments the two samples are equal, so the two distributions must be the same.
+  \item \ec|rnd f g| makes the right sample \ec|f| of the left one, with \ec|g| the inverse of \ec|f|.
+    The side goals say that \ec|f| undoes \ec|g| on the right support, that the masses agree, and that \ec|f| maps the left support into the right one with \ec|g| undoing it.
+    For two uniform distributions on sets of the same size the mass goal is the equality of two constants.
+  \item \ec|rnd{1}| and \ec|rnd{2}| take a sampling on one side only.
+    Its distribution must be lossless, since nothing on the other side pays for its mass.
+  \item To couple a game with itself crosswise, swap the samplings on one side so that the left \ec|x| meets the right \ec|y|.
+    A symmetry argument is then one \ec|byequiv|, because the coupling exchanges the two events.
+    Around an adversary that cannot read the hidden values, \ec|call (: true)| keeps the coupling.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{rnd f g}]
+  {\Phi \Rightarrow \big(\forall y \in d_2.\ y = f(g\,y) \wedge d_2(y) = d_1(g\,y)\big) \\\\
+   \Phi \Rightarrow \forall x \in d_1.\ f\,x \in d_2 \wedge x = g(f\,x) \wedge \Psi[x/x\{1\},\ f\,x/y\{2\}]}
+  {\eqj{x \smp d_1}{y \smp d_2}{\Phi}{\Psi}}
+
+\inferrule*[right=\texttt{rnd\{2\}}]
+  {\Phi \Rightarrow \mathit{lossless}(d) \wedge \forall y \in d.\ \Psi[y/y\{2\}]}
+  {\eqj{\mathtt{skip}}{y \smp d}{\Phi}{\Psi}}
+\end{mathpar}
+
+\noindent
+$d(y)$ is the mass of $y$, \ec|mu1 d y|.
+The bijection is only needed between the two supports, and $\Phi$ may fix the parameters it depends on, as \ec|m{1}| does for the one-time pad.
+
+\lstinputlisting[title={\texttt{07\_rnd.ec}}]{07_rnd.ec}
+
+% ====================================================================
+\section{A sample the run does not read}\label{sec:late}
+
+\begin{itemize}
+  \item A game draws \ec|x| and runs an adversary that never sees it.
+    Inside the run nothing can say that \ec|x| is independent of what the adversary does, because \ec|x| is already in memory at every call.
+  \item Move the sampling behind the call with \ec|swap{1} 1 1; rnd; call (: true)|.
+    The two games are then one experiment, and \ec|byequiv| moves any event from one to the other.
+  \item Drawn last, \ec|x| lands in a set that the run's output determines with probability at most the mass of that set.
+    \ec|mu_mem_le_mu1| bounds a list of length $k$ by $k$ times the largest point mass.
+  \item The phoare \ec|seq n : R p1 p2 p3 p4| bounds the probability by $p_1 p_2 + p_3 p_4$.
+    Here $R$ is what is known of the output after the call, $p_3 = 0$ comes from a hoare triple on the call, and $p_2$ is the bound on the last sampling.
+  \item This needs the run not to read \ec|x| at all.
+    If an oracle depends on \ec|x|, first prove the game equivalent to one whose oracles ignore it, then move the sample.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{seq n : R p1 p2 p3 p4}]
+  {\phjle{c_1}{P}{R}{p_1} \\ \phjle{c_2}{R}{Q}{p_2} \\\\ \phjle{c_1}{P}{\neg R}{p_3} \\ \phjle{c_2}{\neg R}{Q}{p_4}}
+  {\phjle{c_1; c_2}{P}{Q}{p_1 p_2 + p_3 p_4}}
+
+\inferrule*[right=\texttt{swap}]
+  {\text{$\cd{A}$ cannot read or write $x$}}
+  {\eqj{x \smp d;\ v \leftarrow \cd{A.run}()}{v \leftarrow \cd{A.run}();\ x \smp d}{\Eq{\cd{glob\ A}}}{\Eq{x, v, \cd{glob\ A}}}}
+\end{mathpar}
+
+\noindent
+The second rule is \ec|swap|, then \ec|rnd| and \ec|call (: true)|.
+With $p_1 = 1$, $p_3 = 0$ and $p_4 = 1$ the first rule is the one used in \texttt{08\_late\_sample.ec}.
+With \ec|=| in place of \ec|<=| everywhere it gives exact probabilities (Section~\ref{sec:laws}).
+
+\lstinputlisting[title={\texttt{08\_late\_sample.ec}}]{08_late_sample.ec}
+
+% ====================================================================
+\section{A probability as a spec, and averaging}\label{sec:avg}
+
+\begin{itemize}
+  \item \ec|Pr[G.main(x0) @ &m : res]| depends on \ec|&m| only through \ec|glob G|.
+    As a phoare with precondition \ec|arg = x0 /\ (glob G) = (glob G){m}| it can be called inside a larger program.
+    \ec|bypr| reduces it to a probability from any memory with the same state, and \ec|byequiv| with \ec|proc true| proves that one.
+  \item \ec|proc true| proves an abstract procedure equivalent to itself: equal state and arguments give equal results.
+  \item A bound for every value of a parameter is a bound for a random one.
+    After the sampling, \ec|exlim| names the value, \ec|case @[ambient]| splits on a formula with no program variable in it, and the call uses the spec at that value through \ec|conseq (: _ ==> _ : = p)|.
+  \item From random to fixed: over a finite support some value is no worse than the average.
+    A theorem about a random key, world or oracle then gives one fixed value.
+    That value is chosen after the adversary and the memory.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{proc true}]
+  {\cd{G}\ \text{abstract}}
+  {\eqj{\cd{G.p}}{\cd{G.p}}{\Eq{\mathit{arg}, \cd{glob\ G}}}{\Eq{\mathit{res}, \cd{glob\ G}}}}
+
+\inferrule*[right=averaging]
+  {\forall x \in d.\ \Pr[\cd{G.main}(x), m : E] \le \varepsilon}
+  {\Pr[x \smp d;\ \cd{G.main}(x), m : E] \le \varepsilon}
+
+\inferrule*[right=below the average]
+  {\mathit{supp}(d)\ \text{finite and nonempty}}
+  {\exists x \in d.\ \Pr[\cd{G.main}(x), m : E] \le \Pr[x \smp d;\ \cd{G.main}(x), m : E]}
+\end{mathpar}
+
+\lstinputlisting[title={\texttt{09\_averaging.ec}}]{09_averaging.ec}
+
+% ====================================================================
+\section{Laws, and equivalences \texorpdfstring{\texttt{rnd}}{rnd} cannot prove}\label{sec:laws}
+
+\begin{itemize}
+  \item The law of ``draw coins, then run a procedure'' is an exact phoare when the procedure is known by a hoare spec and terminates.
+    Use \ec|seq 1 : R p1 1%r _ 0%r| with \ec|R| saying that the coins already decide the event.
+    From \ec|R| the call ends in the event with probability~$1$, by the spec with losslessness (\ec|conseq ll H|), and from $\neg$\ec|R| with probability~$0$, by a hoare triple.
+    The \ec|_| lets \EC{} fill in $p_3$.
+  \item \ec|byphoare| with that law turns the probability of an event of the program into a probability over the coins, which is a fact about distributions.
+  \item \ec|rnd| needs a bijection between the two samplings.
+    When there is none, as between a pair and one value, \ec|bypr (res{1}) (res{2})| reduces the equivalence to the equality of the two output laws, with one \ec|byphoare| per side.
+  \item \ec|transitivity{1} { s }| replaces the whole left program by the statement \ec|s|, typically a call of a procedure that an equivalence is already known about.
+    Cut with \ec|seq| first, so that the statements to replace are the whole program.
+  \item \ec|transitivity N.p (P1 ==> Q1) (P2 ==> Q2)| goes through a third procedure.
+    Its side goals ask for a middle argument and for the composition of the two postconditions.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{bypr (res\{1\}) (res\{2\})}]
+  {\forall m_1\, m_2\, v.\ \Phi(m_1, m_2) \Rightarrow \Pr[c_1, m_1 : \mathit{res} = v] = \Pr[c_2, m_2 : \mathit{res} = v]}
+  {\eqj{c_1}{c_2}{\Phi}{\Eq{\mathit{res}}}}
+
+\inferrule*[right=\texttt{transitivity}]
+  {\eqj{c_1}{c}{\Phi_1}{\Psi_1} \\ \eqj{c}{c_2}{\Phi_2}{\Psi_2} \\\\
+   \Phi(m_1, m_2) \Rightarrow \exists m.\ \Phi_1(m_1, m) \wedge \Phi_2(m, m_2) \\\\
+   \Psi_1(m_1, m) \wedge \Psi_2(m, m_2) \Rightarrow \Psi(m_1, m_2)}
+  {\eqj{c_1}{c_2}{\Phi}{\Psi}}
+\end{mathpar}
+
+\noindent
+The first rule is sound because two subdistributions that give every value the same mass are equal, and equal distributions are coupled by the identity.
+
+\lstinputlisting[title={\texttt{10\_laws.ec}}]{10_laws.ec}
+
+% ====================================================================
+\section{Loops}\label{sec:while}
+
+\begin{itemize}
+  \item \ec|while (I)| in hoare logic: \ec|I| holds before the loop and the body keeps it under the guard; after the loop \ec|I| holds and the guard is false.
+  \item \ec|while (I) (v)| for termination: from the guard, \ec|I| and \ec|v = z|, the body ends in \ec|I| with \ec|v < z|, with probability~$1$.
+    Before the loop, \ec|v <= 0| must imply that the guard is false.
+  \item A loop is best given a functional spec, a hoare triple \ec|res = | the function of the arguments, together with losslessness.
+    If it borrows a global variable, the spec says that it puts it back, with the initial value fixed by a lemma parameter.
+  \item Two loops that do not run in step are equivalent because they compute the same function.
+    \ec|proc*| turns the procedures into call statements, \ec|exists*| and \ec|elim*| name the arguments, and \ec|call{1}| and \ec|call{2}| run each side alone with its spec made a phoare with probability~$1$.
+  \item \ec|ecall (spec e)| applies a spec whose arguments are program expressions, read just before the call.
+    In a loop body that saves an \ec|exists*|.
+  \item \ec|rcondt n| and \ec|rcondf n| decide the \ec|if| or \ec|while| at statement \ec|n|, given what the first $n-1$ statements establish.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{while I}]
+  {\hj{c}{I \wedge b}{I}}
+  {\hj{\mathbf{while}\ b\ \mathbf{do}\ c}{I}{I \wedge \neg b}}
+
+\inferrule*[right=\texttt{while I v}]
+  {\forall z.\ \phj{c}{I \wedge b \wedge v = z}{I \wedge v < z}{1} \\ I \wedge v \le 0 \Rightarrow \neg b}
+  {\phj{\mathbf{while}\ b\ \mathbf{do}\ c}{I}{I \wedge \neg b}{1}}
+\end{mathpar}
+
+\lstinputlisting[title={\texttt{11\_while.ec}}]{11_while.ec}
+
+% ====================================================================
+\section{\texorpdfstring{\texttt{fel}}{fel}: a charge per oracle call}\label{sec:fel}
+
+\begin{itemize}
+  \item An oracle that raises \ec|bad| with probability at most $\delta$ at each of at most $q$ calls gives $\Pr[\mathit{bad}] \le q\delta$, whatever the adversary does between the calls.
+    \ec|fel| is that union bound.
+    It needs \ec|require import FelTactic|.
+  \item \ec|fel k cnt delta q bad [o : (guard); ...] inv| takes the number $k$ of statements before the adversary runs, the counter and its charge, the bound $q$ on the counter, the failure event, the charged oracles with the guard under which they are charged, and an optional invariant.
+  \item Name the oracles as the adversary calls them.
+    An entry that names no oracle is silently ignored, and that oracle gets the guard \ec|true|.
+  \item The goals come in a fixed order: the sum of the charges, the event, the first $k$ statements, and then three goals per oracle, in the alphabetical order of the oracles' module names.
+    The three are the charge, the fact that a charged call pays one step of the counter, and the fact that an uncharged call raises nothing.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{fel}]
+  {\textstyle\sum_{i<q}\delta(i) \le \varepsilon \\ E \wedge I \Rightarrow F \wedge \mathit{cnt} \le q \\ \hj{c_0}{\Phi}{\neg F \wedge \mathit{cnt} = 0 \wedge I} \\\\
+   \forall \cd{o}.\ \phjle{\cd{o}}{0 \le \mathit{cnt} < q \wedge \neg F \wedge I \wedge g_{\cd{o}}}{F}{\delta(\mathit{cnt})} \\\\
+   \forall \cd{o}\, c.\ \hj{\cd{o}}{g_{\cd{o}} \wedge \mathit{cnt} = c \wedge I}{c < \mathit{cnt} \wedge I} \\\\
+   \forall \cd{o}\, b\, c.\ \hj{\cd{o}}{\neg g_{\cd{o}} \wedge F = b \wedge \mathit{cnt} = c \wedge I}{F = b \wedge c \le \mathit{cnt} \wedge I}}
+  {\Pr[c_0;\ \cd{A}^{\vec{\cd{o}}}, m : E] \le \varepsilon}
+\end{mathpar}
+
+\noindent
+Here $c_0$ is the first $k$ statements and $\Phi$ says the memory is $m$.
+The charge may depend on the counter but not on the rest of the state; for that, use an ehoare potential (Section~\ref{sec:ehoare}).
+
+\lstinputlisting[title={\texttt{12\_fel.ec}}]{12_fel.ec}
+
+% ====================================================================
+\section{\texorpdfstring{\texttt{ehoare}}{ehoare}: expectations}\label{sec:ehoare}
+
+\begin{itemize}
+  \item \ec|ehoare[c : f ==> g]| says that the expected value of \ec|g| after \ec|c| is at most \ec|f| before it.
+    Both are \ec|xreal|s: nonnegative reals or infinity.
+    \ec|x%xr|, \ec|i%xr| and \ec|b%xr| coerce a real, an integer and a Boolean (1 or 0).
+  \item \ec|byehoare (: f ==> E%xr)| proves \ec|Pr[c @ &m : E] <= f{m}|, because the probability of an event is the expectation of its indicator.
+    It gives upper bounds only.
+  \item \ec!(b `|` f)! is \ec|f| where \ec|b| holds and infinity elsewhere: a guarded precondition.
+    \ec|xle_cxr_r| and \ec|xle_cxr_l| open it on either side of \ec|<=|.
+    In ehoare an \ec|if| puts its condition in front of each branch's precondition in that form.
+  \item In ehoare, \ec|wp| goes through samplings and turns them into \ec|Ep|.
+    \ec|EpD| splits a sum, \ec|EpC| takes a constant out with the weight, and \ec|Ep_mu| turns an indicator into a probability.
+    After \ec|/=| a comparison of \ec|xreal|s of reals is a comparison of reals over \ec|%pos|, which \ec|smt| can do.
+  \item \ec|call (: inv)| through an abstract adversary needs \ec|ehoare[o : inv ==> inv]| for each oracle, whatever state it starts from.
+    The whole run then does not increase \ec|inv| in expectation, whatever the adversary does between calls.
+    This is \ec|fel| with a charge that may depend on the state.
+  \item \ec|conseq| on an ehoare goal returns the postcondition implication as a guard over the modified variables.
+    \ec|sp| does not apply to ehoare goals; cut with \ec|seq 1 : (inv)| instead.
+  \item No \ec|conseq| combines an ehoare with a hoare spec.
+    Prove the ehoare for a reference program that computes the function, the equiv between the program and the reference, and apply \ec|conseq E H|.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{byehoare}]
+  {\ehj{c}{f}{[E]}}
+  {\Pr[c, m : E] \le f(m)}
+
+\inferrule*[right=\texttt{call (: inv)}]
+  {\forall \cd{o}.\ \ehj{\cd{O.o}}{\mathit{inv}}{\mathit{inv}}}
+  {\ehj{\cd{A}(\cd{O}).\cd{f}}{\mathit{inv}}{\mathit{inv}}}
+
+\inferrule*[right=\texttt{conseq E H}]
+  {\eqj{c}{c'}{\Phi}{\Psi} \\ \ehj{c'}{f'}{g'} \\\\
+   \forall m_1.\ f(m_1) = \infty \vee \exists m_2.\ \Phi(m_1, m_2) \wedge f'(m_2) \le f(m_1) \\\\
+   \forall m_1\, m_2.\ \Psi(m_1, m_2) \Rightarrow g(m_1) \le g'(m_2)}
+  {\ehj{c}{f}{g}}
+\end{mathpar}
+
+\noindent
+$[E]$ is the indicator of $E$.
+In the second rule, as for \ec|call (: I)| in Section~\ref{sec:call}, \ec|inv| must not mention \ec|glob A| and \ec|A| must not be able to write its variables.
+The third rule is sound because the coupling carries the expectation of $g'$ over to $c$: the expected value of $g$ after $c$ is at most that of $g'$ after $c'$.
+
+\lstinputlisting[title={\texttt{13\_ehoare.ec}}]{13_ehoare.ec}
+
+% ====================================================================
 \section{Pitfalls}\label{sec:pitfalls}
 
 \begin{itemize}
@@ -380,10 +641,38 @@ Here $\Phi$ mentions only state that $\cd{run}$ leaves alone, which is what the 
   \item Inside a section, a \ec|declare axiom| cannot use a \ec|local| predicate, and a non-local operator cannot mention the \ec|glob| of a declared module.
     Spell the predicate out in the axiom.
   \item \ec|=> //| may close more goals than expected, and the next bullet then fails because all goals are closed.
-  \item \ec|ecall{1} (lemma e{1})| crashed with \ec|InvalidGoalShape| in the version used here.
-    \ec|seq|, \ec|exlim| and \ec|call{1}| do the same job.
+    It also removes a \ec|true| precondition: after \ec|bypr (res{1}) (res{2}) => //| there is no hypothesis left to introduce.
+  \item \ec|ecall{1} (lemma (glob A){1})| crashes with \ec|InvalidGoalShape|.
+    With ordinary program variables \ec|ecall{1}| works, and \ec|ecall{1} (inc_ph P.x{1})| needs no \ec|seq| or \ec|exlim|.
+    Naming the glob first also works: \ec|exlim (glob A){1} => g; ecall{1} (lemma g)|.
+    Otherwise \ec|seq|, \ec|exlim| and \ec|call{1}| do the same job.
   \item The order of the side goals from \ec|conseq| is not always the order of its arguments.
     Look at them before writing bullets.
+  \item \ec|*)| ends a comment wherever it is, so a comment containing \ec|(exists* ... elim*)| closes at \ec|elim*)|.
+  \item \ec|^^| on Booleans needs \ec|require import Bool|, which \ec|AllCore| does not export.
+    \ec|fel| needs \ec|require import FelTactic|.
+  \item A lemma parameter named like a program variable shadows it.
+    In \ec|lemma l (x : int) : hoare[M.f : x = 3 ==> ...]| the \ec|x| is the parameter, not the argument of \ec|M.f|.
+    Name parameters \ec|x0| or \ec|xx|.
+  \item Once the section is closed, every lemma of it takes the declared modules and every \ec|declare axiom| declared before it, in order, whether it uses them or not.
+    \ec|print| a lemma to see its statement.
+    Declare an axiom after the lemmas that do not need it, or in a section of its own.
+  \item \ec|sp| runs through an \ec|if| whose branches only assign, and the \ec|if| that follows fails with ``invalid first instruction''.
+    Give \ec|sp| a count, as in \ec|sp 1; if|.
+    \ec|sp| does not apply to ehoare goals at all; cut with \ec|seq 1 : (inv)|.
+  \item \ec|fel| takes its oracles as the adversary calls them, not the procedures they are aliases of.
+    An entry that names no oracle is silently ignored, and that oracle gets the guard \ec|true|.
+    Its per-oracle goals come in the alphabetical order of the oracles' module names, not in the order of the list.
+  \item In a rewrite chain, \ec|1:/#| is accepted but \ec|1:smt(lemma)| is a parse error.
+    Prove the side fact first with \ec|have|.
+  \item After \ec|clone ... proof *|, a missing \ec|realize| is reported only by the next command, and at the very end of a file not at all: the file compiles.
+    End such a file with a lemma.
+  \item \ec|rename [module] "Atk" as "Coll"| renames every module whose name contains \ec|Atk|, so \ec|AtkJ| becomes \ec|CollJ|.
+  \item \EC{} does not check a required file again when it has a fresh \ec|.eco|.
+    Delete the \ec|.eco| files, or check a clean copy, before trusting a build.
+  \item Newer \EC{} (after r2026.07) wants the bound of a phoare or an ehoare to be nonnegative, as extra goals of \ec|rnd|, \ec|bypr|, \ec|byehoare| and \ec|exfalso|.
+    Keep \ec|have hb : 0%r <= bound| in the context so that \ec|=> //| closes them.
+    The files of Sections~\ref{sec:late}, \ref{sec:avg}, \ref{sec:fel} and~\ref{sec:ehoare} work on both versions that way.
 \end{itemize}
 
 % ====================================================================
@@ -401,7 +690,8 @@ GOALS ALL'
 \begin{itemize}
   \item \texttt{LOAD} checks everything up to and including the given line, then waits for more input.
     If that line is \ec|proof. admit. qed.|, split it first, or the load runs past the proof.
-  \item Every further line is one tactic, one sentence per line.
+  \item Every further line is one tactic, one sentence per line; two sentences on one line are rejected.
+    A statement that spans several lines cannot be sent: put it in the file and load up to its \ec|proof.| line.
   \item \texttt{GOALS} prints the focused goal, \texttt{GOALS ALL} prints all of them, and \texttt{TREE ALL} prints the goal tree.
     An error prints \texttt{ERROR} together with the offending \texttt{source:} line.
 \end{itemize}
