@@ -1,6 +1,6 @@
 (* Samplings: rnd with a bijection, one-sided rnd, moving a draw, product
  * samplings, and the five-argument phoare seq.
- * Run: easycrypt compile 08_sampling.ec *)
+ * Run: easycrypt compile 15_sampling.ec *)
 require import AllCore Distr DBool DInterval.
 require DProd.
 

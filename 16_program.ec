@@ -1,6 +1,6 @@
 (* Program-level tactics: ecall, rcondt / rcondf, termination variants,
  * rewrite equiv[...], proc*, sp with two counts.
- * Run: easycrypt compile 09_program.ec *)
+ * Run: easycrypt compile 16_program.ec *)
 require import AllCore Distr DBool.
 
 module M = {

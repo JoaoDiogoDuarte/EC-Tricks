@@ -1,5 +1,5 @@
 (* ehoare: bounding EXPECTED values (expectation Hoare logic).
- * Run: easycrypt compile 07_ehoare.ec
+ * Run: easycrypt compile 14_ehoare_patterns.ec
  *
  *   ehoare [ M.f : pre ==> post ]
  *
