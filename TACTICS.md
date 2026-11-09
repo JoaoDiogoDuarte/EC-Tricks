@@ -16,7 +16,7 @@ are instruction positions (1-based; `0` means "before the first").
 ## Expectation Hoare logic (`ehoare`)
 
 The logic for **expected values**, from `theories/datatypes/Xreal.ec`.
-Example: `07_ehoare.ec`.
+Examples: `13_ehoare.ec`, `14_ehoare_patterns.ec`.
 
 ### The judgment
 
@@ -78,7 +78,7 @@ expectation, so only upper bounds make sense.
   for `I`.  To call a procedure inside the body, `exlim` the loop
   variables and frame them with the transformer, adding the budget of the
   remaining iterations: `call /(fun v => (i = i0 /\ ...) `|` (v + rest%xr)) H`
-  (`07_ehoare.ec`, `run_e`).
+  (`14_ehoare_patterns.ec`, `run_e`).
 * **`call (: I)`** on an **abstract adversary** — `I` is a potential that
   every oracle procedure preserves in expectation.  The standard trick
   (SwapCore.ec: `recording_potential`): budget the remaining queries in the
@@ -136,7 +136,7 @@ ehoare proof by instantiating `K` (Simon.ec: `evaluate_expectation`,
 
 ## Sampling
 
-Examples: `08_sampling.ec`.
+Examples: `07_rnd.ec`, `08_late_sample.ec`, `15_sampling.ec`.
 
 | Tactic | What it does |
 |---|---|
@@ -183,7 +183,7 @@ in disguise (`hoare; ...`).  A `_` leaves the probability to be inferred.
 
 ## Program transformations
 
-Examples: `09_program.ec`.
+Examples: `16_program.ec`.
 
 | Tactic | What it does |
 |---|---|
@@ -202,7 +202,7 @@ Examples: `09_program.ec`.
 
 ## Probabilities and the ambient logic
 
-Examples: `04_pr.ec`, `10_averaging.ec`.
+Examples: `04_pr.ec`, `09_averaging.ec`.
 
 | Form | What it does |
 |---|---|
@@ -222,7 +222,7 @@ gives the lazy `RO` and `FullRO`; `clone RO.FinEager as E with op FinFrom.enum <
 and the probability equalities `E.pr_RO_FinRO_D` and `E.pr_FinRO_FunRO_D`
 for a distinguisher.  SimonFixed.ec turns the finder's lazily drawn coins
 into a function this way, then draws (table, function) as one parameter and
-averages over it (`10_averaging.ec`).
+averages over it (`09_averaging.ec`).
 
 ---
 
