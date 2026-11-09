@@ -10,6 +10,7 @@
 \usepackage{tabularx}
 \usepackage{enumitem}
 \usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{mathpartir}
 \mprset{rightstyle=\normalfont\small}
 
@@ -17,6 +18,8 @@
 \newcommand{\eqj}[4]{\models #1 \sim #2 : #3 \Rightarrow #4}
 \newcommand{\hj}[3]{\models #1 : #2 \Rightarrow #3}
 \newcommand{\phj}[4]{\models #1 : #2 \Rightarrow #3\ [{=}\,#4]}
+\newcommand{\ehj}[3]{\models_{\mathbb{E}} #1 : #2 \Rightarrow #3}
+\newcommand{\Ex}{\mathbb{E}}
 \newcommand{\Eq}[1]{\mathord{=}\{#1\}}
 \newcommand{\cd}[1]{\mathtt{#1}}
 \newcommand{\mods}{\mathrm{mod}}
@@ -28,9 +31,9 @@
 % --------------------------------------------------------------------
 % EasyCrypt listings
 \lstdefinelanguage{easycrypt}{
-  morekeywords=[1]{forall,exists,fun,glob,let,in,var,proc,if,then,else,elif,while,return,res,equiv,hoare,phoare,islossless},
+  morekeywords=[1]{forall,exists,fun,glob,let,in,var,proc,if,then,else,elif,while,return,res,equiv,hoare,phoare,ehoare,islossless},
   morekeywords=[2]{axiom,lemma,proof,qed,abort,end,import,export,include,local,declare,module,op,pred,require,theory,section,type,clone,with,Pr},
-  morekeywords=[3]{simplify,congr,split,left,right,case,pose,have,elim,exlim,ecall,apply,rewrite,subst,progress,trivial,auto,move,transitivity,symmetry,seq,wp,sp,sim,skip,call,rcondt,rcondf,swap,rnd,bypr,byphoare,byequiv,conseq,inline,exists,first,last,do},
+  morekeywords=[3]{simplify,congr,split,left,right,case,pose,have,elim,exlim,ecall,apply,rewrite,subst,progress,trivial,auto,move,transitivity,symmetry,seq,wp,sp,sim,skip,call,rcondt,rcondf,swap,rnd,rndsem,bypr,byphoare,byequiv,byehoare,conseq,inline,exists,first,last,do,exfalso,hoare},
   morekeywords=[4]{exact,smt,by,done},
   morekeywords=[5]{admit},
   sensitive=true,
@@ -72,7 +75,8 @@
 
 \noindent
 Every listing below is a complete file from this folder.
-Each compiles on its own against the standard library, so any of them can be copied out, run, and changed.
+Each compiles on its own against the standard library (checked with \EC{} release \texttt{r2026.10}), so any of them can be copied out, run, and changed.
+Sections~\ref{sec:ehoare}--\ref{sec:avg} come from the Simon separation development; \texttt{TACTICS.md} in the same folder is a reference table of the less common tactics and their syntax.
 
 \begin{lstlisting}[language={},numbers=none]
 for f in *.ec; do easycrypt compile "$f" || echo "FAILED: $f"; done
@@ -116,6 +120,8 @@ The rules are simplified to the shape the tactic uses, and they are read bottom-
     It says nothing about termination.
   \item $\phj{c}{P}{Q}{p}$ is a probabilistic Hoare judgement, saying that from every memory in $P$ the probability that $c$ ends in $Q$ is exactly $p$.
     With $p = 1$ it gives both termination and the postcondition.
+  \item $\ehj{c}{f}{g}$ is an expectation Hoare judgement: $f$ and $g$ map a memory to a non-negative real or $\infty$, and from every memory $m$ the expectation of $g$ over the final memories is at most $f(m)$.
+    A run that does not terminate contributes nothing.
   \item $\mods(c)$ is the set of variables $c$ may write.
     When a rule quantifies over values for them, \EC{} shows the quantified names as \ec|result_L|, \ec|O_R|, \ec|S_R| and so on.
 \end{itemize}
@@ -369,6 +375,107 @@ Here $\Phi$ mentions only state that $\cd{run}$ leaves alone, which is what the 
 \lstinputlisting[title={\texttt{06\_one\_sided.ec}}]{06_one_sided.ec}
 
 % ====================================================================
+\section{Expected values: \texorpdfstring{\texttt{ehoare}}{ehoare}}\label{sec:ehoare}
+
+\begin{itemize}
+  \item Pre and post are of type \ec|xreal|.
+    \ec|x%xr| injects an \ec|int|, \ec|real| or \ec|bool|, and \ec!b `|` x! is $x$ if $b$ holds and $\infty$ otherwise.
+    In a precondition it is an assumption, since an $\infty$ bound is always met.
+  \item After \ec|wp|, \ec|rnd| and \ec|skip| the goal is an inequality between \ec|xreal|s.
+    \ec|xle_cxr_r| assumes the condition on the right, \ec|xle_cxr_l| discharges the one on the left, \ec|xle_cxr| does both, and \ec|xle_rle| goes back to reals.
+  \item Take the conditions out with \ec|xle_cxr_r| before simplifying an expectation; in the other order the goal grew until \ec|apply| hung.
+  \item \ec|call /F H| uses $\ehj{f}{F \circ P}{F \circ Q}$ from $H : \ehj{f}{P}{Q}$, for $F$ concave and increasing.
+    With $F = \lambda v.\ A \mathbin{\texttt{\textasciigrave|\textasciigrave}} v$ it frames a fact $A$ about variables the call does not write; with $F = \lambda v.\ p \cdot v$ (written \ec|p%xr * v|) it scales the bound.
+  \item An oracle can be charged through an abstract adversary: the invariant of \ec|call (: I)| is a potential that keeps the unspent budget, and each oracle call pays for its expected cost out of it.
+  \item \ec|byehoare| turns the judgement into $\Pr[\dots] \le p$ when the post dominates the indicator of the event.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{rnd}]
+  {\ehj{c}{f}{\lambda m.\ \Ex_{v \sim d}\,[g(m[x \mapsto v])]}}
+  {\ehj{c;\ x \xleftarrow{\$} d}{f}{g}}
+
+\inferrule*[right=\texttt{call /F H}]
+  {\ehj{\cd{f}}{P}{Q} \\ F \text{ concave, increasing}}
+  {\ehj{\cd{f}}{F \circ P}{F \circ Q}}
+
+\inferrule*[right=\texttt{while I}]
+  {\ehj{c}{b \mathbin{\texttt{\textasciigrave|\textasciigrave}} I}{I} \\ \forall m.\ g(m) \le (\neg b \mathbin{\texttt{\textasciigrave|\textasciigrave}} I)(m)}
+  {\ehj{\mathtt{while}\ b\ \mathtt{do}\ c}{I}{g}}
+
+\inferrule*[right=\texttt{byehoare}]
+  {\ehj{c}{f}{g} \\ \mathbf{1}_E \le g \\ f(m) = p}
+  {\Pr[c @ m : E] \le p}
+\end{mathpar}
+
+\lstinputlisting[title={\texttt{07\_ehoare.ec}}]{07_ehoare.ec}
+
+% ====================================================================
+\section{Samplings}\label{sec:sampling}
+
+\begin{itemize}
+  \item \ec|rnd f g| couples two draws through a bijection; \ec|rnd{i}| draws on one side only and needs the law to be lossless.
+  \item A draw that the rest of the program does not read can be moved behind a call with \ec|swap|.
+    Drawn last, it is independent of the view, and any event ``the sample lies in a set computed from the view'' is bounded by the mass of that set.
+  \item The five-argument \ec|seq| splits a phoare bound as $p_1 p_2 + p_3 p_4$.
+  \item \ec|rndsem*{i} n| merges a block of draws into one draw from the composed law, which \ec|rnd| can then relate to a single draw.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{rnd f g}]
+  {f \circ g = \mathrm{id} \text{ on } d_2 \\ g \circ f = \mathrm{id} \text{ on } d_1 \\ \forall y \in d_2.\ d_2(y) = d_1(g\,y) \\
+   \forall x \in d_1.\ \Psi[x/x_1, f\,x/x_2]}
+  {\eqj{x_1 \xleftarrow{\$} d_1}{x_2 \xleftarrow{\$} d_2}{\top}{\Psi}}
+
+\inferrule*[right=\texttt{seq n : R p1 p2 p3 p4 I}]
+  {\hj{c_1}{P}{I} \\ \phj{c_1}{P}{R}{p_1} \\ \phj{c_2}{R \wedge I}{Q}{p_2} \\\\
+   \phj{c_1}{P}{\neg R}{p_3} \\ \phj{c_2}{\neg R \wedge I}{Q}{p_4} \\ p_1 p_2 + p_3 p_4 = p}
+  {\phj{c_1; c_2}{P}{Q}{p}}
+\end{mathpar}
+
+\noindent
+When $p_4 = 0$, \EC{} does not ask for the premise with $p_3$.
+
+\lstinputlisting[title={\texttt{08\_sampling.ec}}]{08_sampling.ec}
+
+% ====================================================================
+\section{Program transformations}\label{sec:program}
+
+\begin{itemize}
+  \item \ec|ecall (H e)| is \ec|call| with an instance of a spec whose arguments are program expressions.
+    With a phoare spec of probability~1 it works one-sided, as \ec|ecall{1}|.
+  \item \ec|rcondt{i} n| and \ec|rcondf{i} n| fix the branch of the \ec|if| or \ec|while| at line \ec|n|.
+    The side goal is a hoare triple on the code before it.
+  \item \ec|while (true) (v)| proves termination with an integer variant.
+  \item \ec|proc*| and then \ec|rewrite equiv[{1} 1 E]| replace a call by the other program of the equiv $E$.
+\end{itemize}
+
+\begin{mathpar}
+\inferrule*[right=\texttt{rcondt\{1\} n}]
+  {\forall m_2.\ \hj{c_1}{\Phi(\cdot, m_2)}{b} \\ \eqj{c_1; s_1; c_1'}{c_2}{\Phi}{\Psi}}
+  {\eqj{c_1; \mathtt{if}\ b\ \mathtt{then}\ s_1\ \mathtt{else}\ s_2; c_1'}{c_2}{\Phi}{\Psi}}
+
+\inferrule*[right=\texttt{while (I) (v)}]
+  {\forall z.\ \phj{c}{I \wedge b \wedge v = z}{I \wedge v < z}{1} \\ I \wedge v \le 0 \Rightarrow \neg b}
+  {\phj{\mathtt{while}\ b\ \mathtt{do}\ c}{I}{I \wedge \neg b}{1}}
+\end{mathpar}
+
+\lstinputlisting[title={\texttt{09\_program.ec}}]{09_program.ec}
+
+% ====================================================================
+\section{From a random parameter to a fixed one}\label{sec:avg}
+
+\begin{itemize}
+  \item A probability $\Pr[G(x_0) @ m : \mathit{res}]$ is also a phoare bound for $G$ from every memory that agrees with $m$ on \ec|glob G|.
+    In that form it can be a step of a bigger program.
+  \item If $G$ succeeds with probability at least $\varepsilon$ on every value of the support, it does on a random value.
+    On a finite support, one value does no better than the average.
+  \item \ec|case @[ambient]: (e)| splits on \ec|e| in the ambient logic, inside a program goal.
+\end{itemize}
+
+\lstinputlisting[title={\texttt{10\_averaging.ec}}]{10_averaging.ec}
+
+% ====================================================================
 \section{Pitfalls}\label{sec:pitfalls}
 
 \begin{itemize}
@@ -380,8 +487,9 @@ Here $\Phi$ mentions only state that $\cd{run}$ leaves alone, which is what the 
   \item Inside a section, a \ec|declare axiom| cannot use a \ec|local| predicate, and a non-local operator cannot mention the \ec|glob| of a declared module.
     Spell the predicate out in the axiom.
   \item \ec|=> //| may close more goals than expected, and the next bullet then fails because all goals are closed.
-  \item \ec|ecall{1} (lemma e{1})| crashed with \ec|InvalidGoalShape| in the version used here.
-    \ec|seq|, \ec|exlim| and \ec|call{1}| do the same job.
+  \item \ec|ecall{1} (lemma e{1})| crashed with \ec|InvalidGoalShape| in an earlier version.
+    In \texttt{r2026.10} it works with phoare specs of probability~1 (Section~\ref{sec:program}); \ec|seq|, \ec|exlim| and \ec|call{1}| remain an alternative.
+  \item In \ec|ehoare|, scale with \ec|call /(fun v => p%xr * v)|, not \ec|p ** v|: the latter made the concavity check loop.
   \item The order of the side goals from \ec|conseq| is not always the order of its arguments.
     Look at them before writing bullets.
 \end{itemize}
@@ -390,6 +498,15 @@ Here $\Phi$ mentions only state that $\cd{run}$ leaves alone, which is what the 
 \section{Seeing the goals from the command line}\label{sec:llm}
 
 \ec|easycrypt llm| loads a file up to a line and prints the goals there.
+In release \texttt{r2026.10} the options are \texttt{-upto LINE} (the goals before that line; \texttt{LINE:COL} also works) and \texttt{-lastgoals} (the goals at the first failure):
+
+\begin{lstlisting}[language={},numbers=none]
+easycrypt llm -I <dirs> -upto 42 file.ec
+easycrypt llm -I <dirs> -lastgoals file.ec
+\end{lstlisting}
+
+\noindent
+Other builds also accept an interactive \texttt{-eval} script:
 
 \begin{lstlisting}[language={},numbers=none]
 easycrypt llm -I <dirs> -eval 'LOAD "file.ec" 42
